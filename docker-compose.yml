@@ -1,0 +1,94 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: playto
+      POSTGRES_PASSWORD: playto
+      POSTGRES_DB: playto
+    # Intentionally NOT publishing 5432 to the host. Web and worker reach the
+    # database via the compose network on db:5432. Skipping the host port
+    # means `docker compose up` can never conflict with a Postgres a developer
+    # already runs on the host (a common 5432/5433 collision).
+    # If you need to inspect the DB:  docker compose exec db psql -U playto playto
+    volumes:
+      - playto_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U playto -d playto"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  web:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: >
+      sh -c "
+        python manage.py migrate --noinput &&
+        python manage.py setup_schedules &&
+        python manage.py seed &&
+        gunicorn playto.wsgi:application --bind 0.0.0.0:8000 --workers 3
+      "
+    environment:
+      DEBUG: "False"
+      ALLOWED_HOSTS: "*"
+      SECRET_KEY: dev-compose-secret-not-for-production
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: playto
+      POSTGRES_USER: playto
+      POSTGRES_PASSWORD: playto
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      # Healthy only once migrations finished AND gunicorn is serving requests.
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2); sys.exit(0)\" || exit 1"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+      start_period: 5s
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    # Migrate is idempotent and protected by Postgres advisory lock, so even
+    # if web's migrate is still running, worker's migrate just blocks until
+    # it can acquire the lock and then no-ops. After that, qcluster starts.
+    command: >
+      sh -c "
+        python manage.py migrate --noinput &&
+        python manage.py qcluster
+      "
+    environment:
+      DEBUG: "False"
+      ALLOWED_HOSTS: "*"
+      SECRET_KEY: dev-compose-secret-not-for-production
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: playto
+      POSTGRES_USER: playto
+      POSTGRES_PASSWORD: playto
+    depends_on:
+      db:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000
+    ports:
+      - "5173:5173"
+    depends_on:
+      web:
+        condition: service_healthy
+
+volumes:
+  playto_pg_data:

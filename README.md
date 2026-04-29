@@ -6,9 +6,12 @@ payouts to bank accounts. The hard parts — concurrency, idempotency, state
 machine, and money integrity — are implemented at the database level, not in
 Python.
 
-- **Stack:** Django 5 + DRF, PostgreSQL, Django-Q2 (Postgres-broker workers, **no Redis**), React + TypeScript + Tailwind (Vite).
-- **Live URL:** _add Render URL after first deploy._
+- **Stack:** Django + DRF, PostgreSQL, Django-Q2 (Postgres-broker workers, no need for Redis), React + TypeScript + Tailwind .
+- **Live dashboard:** https://playto-frontend-icqo.onrender.com
+- **Live API:** https://playto-web-82xt.onrender.com (try `/healthz` or `/api/v1/merchants`)
 - **Sharp explanation of the hard parts:** [`EXPLAINER.md`](./EXPLAINER.md).
+
+> Hosted on Render's free tier — services sleep after ~15 min of inactivity. The first request after a sleep takes ~30s to wake.
 
 ---
 
@@ -194,7 +197,7 @@ EXPLAINER.md    Answers to the 5 spec questions
    - `playto-web` (Django + gunicorn)
    - `playto-worker` (Django-Q cluster + scheduler)
    - `playto-frontend` (Vite-built static site)
-3. After first web deploy, set the frontend service's `VITE_API_BASE_URL` to the web service URL (e.g. `https://playto-web.onrender.com`) and redeploy frontend.
+3. After first web deploy, set the frontend service's `VITE_API_BASE_URL` to the web service URL ( `https://playto-frontend-icqo.onrender.com/`) and redeploy frontend.
 4. The web build command runs migrations, registers schedules, and seeds 3 merchants. All idempotent — re-running does nothing if data already exists.
 
 ---
